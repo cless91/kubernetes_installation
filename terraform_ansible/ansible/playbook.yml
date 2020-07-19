@@ -1,0 +1,172 @@
+---
+- hosts: all
+  remote_user: ubuntu
+  become: yes
+  tasks:
+    - name: install prerequisites apt dependencies
+      apt:
+        pkg:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg-agent
+          - software-properties-common
+          - python3-pip
+        update_cache: yes
+    - name: add docker keys
+      apt_key:
+        url: "https://download.docker.com/linux/ubuntu/gpg"
+        state: present
+    - name: add docker repos
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+    - name: install docker engine
+      apt:
+        pkg:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        update_cache: yes
+    - name: add ubuntu to docker group
+      user:
+        name: "ubuntu"
+        groups: "docker"
+        append: yes
+    - name: ensure docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+    - name: pip install docker
+      pip:
+        name: docker
+    - name: start installing kubernetes - br_netfilter
+      modprobe:
+        name: br_netfilter
+        state: present
+    - name: net.bridge.bridge-nf-call-iptables
+      copy:
+        content: |
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+        dest: /etc/sysctl.d/k8s.conf
+      register: sysctl_result
+    - name: sysctl -p --system
+      shell: sysctl -p --system
+      when: sysctl_result.changed
+    - name: add kubeadm keys
+      apt_key:
+        url: "https://packages.cloud.google.com/apt/doc/apt-key.gpg"
+        state: present
+    - name: add kubeadm repos
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+    - name: install kubelet, kubeadm and kubectl
+      apt:
+        pkg:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+    - name: restart kubelet
+      systemd:
+        state: restarted
+        daemon_reload: yes
+        name: kubelet
+
+- hosts: kube_master
+  remote_user: ubuntu
+  become: yes
+  tasks:
+    - name: verify if kubeadm installed
+      shell: kubeadm config view
+      register: kubeadm_verify
+      failed_when: 'false'
+    - name: kubeadm init
+      when: kubeadm_verify.rc == 1
+      shell: |
+        kubeadm init --pod-network-cidr=192.168.0.0/16
+    - name: Create $HOME/.kube directory if it does not exist - for user ubuntu
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+    - name: copy /etc/kubernetes/admin.conf to $HOME/.kube/config, for user ubuntu, sets ownership and permissions
+      copy:
+        src: /etc/kubernetes/admin.conf
+        remote_src: yes
+        dest: /home/ubuntu/.kube/config
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+    - name: Create $HOME/.kube directory if it does not exist - for ansible user
+      file:
+        path: $HOME/.kube
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: copy /etc/kubernetes/admin.conf to $HOME/.kube/config, for ansible user, sets ownership and permissions
+      copy:
+        src: /etc/kubernetes/admin.conf
+        remote_src: yes
+        dest: $HOME/.kube/config
+        owner: root
+        group: root
+        mode: '0755'
+
+#    - name: post kubeadm init commands - 1
+#      when: kubeadm_verify.rc == 1
+#      shell: |
+#        mkdir -p /home/ubuntu/.kube
+#        cp /etc/kubernetes/admin.conf /home/ubuntu/.kube/config
+#        chown ubuntu:ubuntu /home/ubuntu/.kube/config
+#    - name: post kubeadm init commands - 2
+#      when: kubeadm_verify.rc == 1
+#      shell: |
+#        mkdir -p $HOME/.kube
+#        cp /etc/kubernetes/admin.conf $HOME/.kube/config
+#        chown $(id -u):$(id -g) $HOME/.kube/config
+    - name: pip install openshift for ansible kubernetes module
+      pip:
+        name:
+          - openshift
+          - PyYAML
+    - name: Download calico yaml file
+      get_url:
+        url: https://docs.projectcalico.org/v3.14/manifests/calico.yaml
+        dest: /tmp/calico.yaml
+    - name: install calico
+      k8s:
+        state: present
+        src: /tmp/calico.yaml
+    - name: get join command
+      shell: kubeadm token create --print-join-command
+      register: kubeadm_join_command
+    - name: Ensure virtualenv is sourced from the .bashrc
+      blockinfile:
+        dest: "/home/ubuntu/.bashrc"
+        block: |
+          source <(kubectl completion bash)
+          alias k=kubectl
+          complete -F __start_kubectl k
+        marker: '# {mark} ANSIBLE MANAGED BLOCK - virtualenv'
+        insertbefore: BOF
+        create: yes
+
+- hosts: kube_workers
+  remote_user: ubuntu
+  become: yes
+  tasks:
+    - name: verify if kubeadm installed
+      shell: ls /etc/kubernetes/kubelet.conf
+      register: kubeadm_verify
+      failed_when: 'false'
+    - name: join the k8s cluster
+      when: kubeadm_verify.rc != 0
+      shell: "{{ hostvars[groups['kube_master'][0]].kubeadm_join_command.stdout }}"
