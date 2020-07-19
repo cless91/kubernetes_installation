@@ -120,18 +120,6 @@
         group: root
         mode: '0755'
 
-#    - name: post kubeadm init commands - 1
-#      when: kubeadm_verify.rc == 1
-#      shell: |
-#        mkdir -p /home/ubuntu/.kube
-#        cp /etc/kubernetes/admin.conf /home/ubuntu/.kube/config
-#        chown ubuntu:ubuntu /home/ubuntu/.kube/config
-#    - name: post kubeadm init commands - 2
-#      when: kubeadm_verify.rc == 1
-#      shell: |
-#        mkdir -p $HOME/.kube
-#        cp /etc/kubernetes/admin.conf $HOME/.kube/config
-#        chown $(id -u):$(id -g) $HOME/.kube/config
     - name: pip install openshift for ansible kubernetes module
       pip:
         name:
