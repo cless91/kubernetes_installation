@@ -91,18 +91,18 @@
         kubeadm init --pod-network-cidr=192.168.0.0/16
     - name: Create $HOME/.kube directory if it does not exist - for user ubuntu
       file:
-        path: /home/ubuntu/.kube
+        path: /home/{{ ansible_ssh_user  }}/.kube
         state: directory
-        owner: ubuntu
-        group: ubuntu
+        owner: '{{ ansible_ssh_user  }}'
+        group: '{{ ansible_ssh_user  }}'
         mode: '0755'
     - name: copy /etc/kubernetes/admin.conf to $HOME/.kube/config, for user ubuntu, sets ownership and permissions
       copy:
         src: /etc/kubernetes/admin.conf
         remote_src: yes
-        dest: /home/ubuntu/.kube/config
-        owner: ubuntu
-        group: ubuntu
+        dest: /home/{{ ansible_ssh_user  }}/.kube/config
+        owner: '{{ ansible_ssh_user  }}'
+        group: '{{ ansible_ssh_user  }}'
         mode: '0755'
     - name: Create $HOME/.kube directory if it does not exist - for ansible user
       file:
@@ -138,7 +138,7 @@
       register: kubeadm_join_command
     - name: Ensure virtualenv is sourced from the .bashrc
       blockinfile:
-        dest: "/home/ubuntu/.bashrc"
+        dest: "/home/{{ ansible_ssh_user  }}/.bashrc"
         block: |
           source <(kubectl completion bash)
           alias k=kubectl
