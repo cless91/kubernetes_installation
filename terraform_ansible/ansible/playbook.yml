@@ -13,6 +13,7 @@
           - software-properties-common
           - python3-pip
         update_cache: yes
+        force_apt_get: yes
     - name: add docker keys
       apt_key:
         url: "https://download.docker.com/linux/ubuntu/gpg"
@@ -28,6 +29,7 @@
           - docker-ce-cli
           - containerd.io
         update_cache: yes
+        force_apt_get: yes
     - name: add ubuntu to docker group
       user:
         name: "ubuntu"
@@ -71,6 +73,7 @@
           - kubectl
         state: present
         update_cache: yes
+        force_apt_get: yes
     - name: restart kubelet
       systemd:
         state: restarted
